@@ -1,0 +1,3 @@
+[submodule "aoanet"]
+	path = aoanet
+	url = https://github.com/husthuaan/AoANet.git
