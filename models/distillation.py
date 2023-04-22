@@ -1,37 +1,51 @@
 import torch
 from torch.nn import Module
+from torch.nn.modules.module import T
 
-from aoanet.models.AttModel import AttModel
+from .e2e import FixedFeatureCaptionModel
+from utils.check import *
 
 
 class DistillationContainer(Module):
-    def __init__(self, teacher, student, temperature=20.0):
+    def __init__(
+        self,
+        teacher: FixedFeatureCaptionModel,
+        student: FixedFeatureCaptionModel,
+        corrupter,
+        temperature=20.0,
+        hard_weight=0.1
+    ):
         super().__init__()
         self.teacher = teacher
         self.student = student
-        self.temperature = temperature
+        self.corrupter = corrupter
+        self.__temperature = temperature
+        self.__hard_weight = hard_weight
 
-    def forward(self, images):
-        pass  # todo
+        self.teacher.eval()
+        self.teacher.temperature = temperature
+        self.student.train()
 
+    def forward(self, image, sequence):
+        reference = self.teacher(image, sequence)[1]
 
-class Teacher(Module):
-    def __init__(self, base, temperature=20.0):
-        super().__init__()
-        self.base = base
-        self.base.temperature = temperature
+        corrupted = self.corrupter(image)
+        self.student.temperature = self.temperature
+        soft_prob = self.student(image, sequence)  # todo:multiply soft by T^2
+        self.student.temperature = 1
+        hard_prob = self.student(image, sequence)
 
-    def forward(self, *args, **kwargs):
-        with torch.no_grad():
-            return self.base.forward(*args, **kwargs)
+    def train(self: T, mode: bool = True) -> T:
+        if not mode:
+            raise RuntimeError('Distillation container can only be used to train')
+        return super().train(mode)
 
+    @property
+    def temperature(self):
+        return self.__temperature
 
-class Student(Module):
-    def __init__(self, base, temperature=20.0):
-        super().__init__()
-        self.base = base
-        self.temperature = temperature
-
-    def forward(self, *args, **kwargs):
-        self.base.temperature = 1
-        sincere = self.base(*args, **kwargs)
+    @temperature.setter
+    def temperature(self, value):
+        _check_positive(value)
+        self.__temperature = value
+        self.teacher.temperature = value

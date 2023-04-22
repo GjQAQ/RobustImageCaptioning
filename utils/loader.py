@@ -8,33 +8,6 @@ from aoanet.dataloader import DataLoader
 from .dataset import MSCOCO2014
 
 
-class _DataloaderWrapper(DataLoader):
-    def __init__(self, encoder, root_path: str, opt, device='cpu'):
-        super().__init__(opt)
-        self.encoder = encoder.to(device)
-        self.preprocess = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        self.device = device
-
-        self.datasets = {}
-        with open(opt.input_json) as jsn:
-            self.images_info = json.load(jsn)['images']
-        for split in ('train', 'val', 'test'):
-            self.datasets[split] = MSCOCO2014(root_path, opt.input_label_h5, self.images_info, split)
-
-    def __getitem__(self, index):
-        split = self.images_info[index]['split']
-        if split == 'restval':
-            split = 'train'
-        image, _, _ = self.datasets[split][index]
-        image = self.preprocess(image).to(self.device)[None, ...]
-
-        fc_feat, att_feat = self.encoder(image)
-        att_feat = att_feat.reshape(-1, att_feat.shape[-1])
-        fc_feat = fc_feat.squeeze()
-        seq = self.get_captions(index, self.seq_per_img)
-        return [fc_feat, att_feat, seq, index]
-
-
 class DataloaderWrapper(DataLoader):
     def __init__(self, encoder, root_path: str, opt, device='cpu'):
         super().__init__(opt)
@@ -43,6 +16,7 @@ class DataloaderWrapper(DataLoader):
         self.preprocess = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]).to(device)
 
         self.datasets = {}
+        self.split_ix['train'] = self.split_ix['train']
         with open(opt.input_json) as jsn:
             self.images_info = json.load(jsn)['images']
         for split in ('train', 'val', 'test'):
@@ -66,7 +40,6 @@ class DataloaderWrapper(DataLoader):
         infos = []
         label_batch = []
         gts = []
-        # images = []
         fc_batch = []
         att_batch = []
 
@@ -85,7 +58,7 @@ class DataloaderWrapper(DataLoader):
             image, padded_cap, ground_truth = self.datasets[split][index]
             # images.append(self.preprocess(image))
             fc, att = self.encoder(self.preprocess(image.to(self.device))[None, ...])
-            fc_batch.append(fc)
+            fc_batch.append(fc.squeeze())
             att_batch.append(att.reshape(-1, att.shape[-1]))
             label_batch.append(padded_cap.to(self.device))
             gts.append(ground_truth.to(self.device))

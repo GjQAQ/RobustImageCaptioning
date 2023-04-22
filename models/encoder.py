@@ -11,7 +11,7 @@ import aoanet.misc.resnet as resnets
 class Encoder(Module, metaclass=abc.ABCMeta):
     def __init__(self, attention_size, pretrained=True):
         super().__init__()
-        self.attention_size = attention_size
+        self.attention_size = attention_size  # A
 
         base = self.base_constructor[0](pretrained)
         self.layers = Sequential(
@@ -27,8 +27,8 @@ class Encoder(Module, metaclass=abc.ABCMeta):
 
     def forward(self, x):
         x = self.layers(x)
-        fc = x.mean(3).mean(2).squeeze()
-        att = adaptive_avg_pool2d(x, self.attention_size).permute(0, 2, 3, 1)
+        fc = x.mean(3).mean(2).squeeze()[None, ...]  # add batch dimension
+        att = adaptive_avg_pool2d(x, self.attention_size).permute(0, 2, 3, 1)  # B x A x A x C
 
         return fc, att
 
