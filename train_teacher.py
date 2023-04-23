@@ -31,9 +31,9 @@ except ImportError:
     print("tensorboardX is not installed")
     tb = None
 
-dataset_root = '/root/autodl-tmp/datasets/MSCOCO'
-device = 'cuda'
-pre_trained_path = 'aoanet/log/log_res-aoa/'
+# dataset_root = '/root/autodl-tmp/datasets/MSCOCO'
+# device = 'cuda'
+# pre_trained_path = 'aoanet/log/log_res-aoa/'
 
 
 def train(opt):
@@ -44,6 +44,9 @@ def train(opt):
     # Deal with feature things before anything
     opt.use_fc, opt.use_att = aoa_utils.if_use_feat(opt.caption_model)
     acc_steps = getattr(opt, 'acc_steps', 1)
+    dataset_root = opt.dataset_root
+    device = opt.training_device
+    pre_trained_path = opt.pretrained_path
 
     encoder = models.ResNet101Encoder(7)
     loader = utils.DataloaderWrapper(encoder, dataset_root, opt, device=device)
@@ -240,5 +243,6 @@ def train(opt):
 
 
 if __name__ == '__main__':
-    opt = opts.parse_opt()
+    parser = utils.set_parser()
+    opt = parser.parse_args()
     train(opt)

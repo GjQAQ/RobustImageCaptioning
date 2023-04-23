@@ -4,6 +4,10 @@ from aoanet.models.AoAModel import AoAModel
 
 
 class AttModelWrapper(AoAModel):
+    def __init__(self, opt, temperature):
+        super().__init__(opt)
+        self.distilling_temperature = temperature
+
     def _sample(self, fc_feats, att_feats, att_masks=None, opt=None):
         if opt is None:
             opt = {}
@@ -24,7 +28,6 @@ class AttModelWrapper(AoAModel):
         for t in range(self.seq_length + 1):
             if t == 0:  # input <bos>
                 it = fc_feats.new_zeros(batch_size, dtype=torch.long)
-
             logprobs, state = self.get_logprobs_state(it, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, state)
 
             # following cases are omitted:
@@ -49,4 +52,11 @@ class AttModelWrapper(AoAModel):
             if unfinished.sum() == 0:
                 break
 
-        return seq, seq_log_probs
+        return seq, seq_log_probs  # todo
+
+    def get_logprobs_state(self, it, fc_feats, att_feats, p_att_feats, att_masks, state):
+        # only to apply temperature
+        xt = self.embed(it)
+        output, state = self.core(xt, fc_feats, att_feats, p_att_feats, state, att_masks)
+        logprobs = F.log_softmax(self.logit(output) / self.distilling_temperature, dim=1)
+        return logprobs, state

@@ -2,12 +2,12 @@ import torch
 import torch.nn
 
 from .encoder import Encoder
-from aoanet.models.AttModel import AttModel
+from .decoder import AttModelWrapper
 from utils.check import *
 
 
 class FixedFeatureCaptionModel(torch.nn.Module):
-    def __init__(self, encoder: Encoder, decoder: AttModel, eval_args: dict):
+    def __init__(self, encoder: Encoder, decoder: AttModelWrapper, eval_args: dict):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
@@ -22,7 +22,7 @@ class FixedFeatureCaptionModel(torch.nn.Module):
 
         if self.evaluation_args['beam_size'] != 1:
             raise ValueError()
-        # sequence and log probabilities
+        # sequence, log probabilities of output and log probability distribution
         return self.decoder(fc, att, None, opt=self.evaluation_args, mode='sample')
 
     @property
