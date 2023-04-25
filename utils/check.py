@@ -1,7 +1,7 @@
-__all__ = ['_check_positive']
+__all__ = ['_check_temperature']
 
 
-def _check_positive(t):
+def _check_temperature(t):
     if not (isinstance(t, (float, int)) and t > 0):
         raise ValueError(f'Wrong temperature value: {t}')
 

@@ -4,6 +4,7 @@ from torch.nn.functional import kl_div
 
 from .e2e import FixedFeatureCaptionModel
 from utils.check import *
+from corrupter import Corrupter
 from aoanet.misc.utils import LabelSmoothing
 
 
@@ -12,7 +13,7 @@ class DistillationContainer(Module):
         self,
         teacher: FixedFeatureCaptionModel,
         student: FixedFeatureCaptionModel,
-        corrupter,
+        corrupter: Corrupter,
         temperature=20.0,
         hard_weight=0.1,
         smoothing=0.0
@@ -32,16 +33,16 @@ class DistillationContainer(Module):
 
     def forward(self, image, sequence, mask):
         with torch.no_grad():
-            reference = self.teacher(image, sequence)[2]
+            reference = self.teacher(image, sequence, 'distill')
 
         corrupted = self.corrupter(image)
         self.student.temperature = self.temperature
         soft_prob = self.student(corrupted, sequence)
         self.student.temperature = 1
-        hard_prob = self.student(corrupted, sequence)
+        hard_prob = self.student(corrupted, sequence, use_buffer=True)
 
         soft_loss = kl_div(soft_prob, reference, reduction='none', log_target=True)  # todo
-        hard_loss = self.hard_loss(hard_prob, labels[:, 1:], mask[:, 1:])
+        hard_loss = self.hard_loss(hard_prob, sequence[:, 1:], mask[:, 1:])
 
         return soft_loss / self.temperature ** 2 + self.__hard_weight * hard_loss
 
@@ -56,6 +57,6 @@ class DistillationContainer(Module):
 
     @temperature.setter
     def temperature(self, value):
-        _check_positive(value)
+        _check_temperature(value)
         self.__temperature = value
         self.teacher.temperature = value

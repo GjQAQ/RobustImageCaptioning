@@ -2,9 +2,9 @@
 Training teacher model.
 This code differs from its origin, train.py in AoANet in these ways:
 1. Using images rather than out-of-box feature data as input;
-2. 'start_from' option is banned;
-3. 'use_box' option must be false;
-4. DataParallel is removed.
+2. 'use_box' option must be false;
+3. DataParallel is removed;
+4. self-critical is banned.
 """
 
 from __future__ import absolute_import
@@ -17,6 +17,7 @@ import traceback
 import torch
 import torch.optim as optim
 
+import adapter
 import utils
 import models
 import aoanet.opts as opts
@@ -31,14 +32,8 @@ except ImportError:
     print("tensorboardX is not installed")
     tb = None
 
-# dataset_root = '/root/autodl-tmp/datasets/MSCOCO'
-# device = 'cuda'
-# pre_trained_path = 'aoanet/log/log_res-aoa/'
-
 
 def train(opt):
-    if opt.start_from is not None:
-        raise ValueError()
     if opt.use_box:
         raise ValueError()
     # Deal with feature things before anything
@@ -55,25 +50,32 @@ def train(opt):
 
     tb_summary_writer = tb and tb.SummaryWriter(opt.checkpoint_path)
 
-    infos = {
-        'iter': 0,
-        'epoch': 0,
-        'iterators': loader.iterators,
-        'split_ix': loader.split_ix,
-        'vocab': loader.get_vocab(),
-        'opt': opt
-    }
+    if opt.start_from is not None:
+        infos, histories = utils.load_record(opt)
+    else:
+        infos = {
+            'iter': 0,
+            'epoch': 0,
+            'iterators': loader.iterators,
+            'split_ix': loader.split_ix,
+            'vocab': loader.get_vocab()
+        }
+        histories = {}
+    infos['opt'] = opt
+
     eval_kwargs = {
         'split': 'val',
         'dataset': opt.input_json
     }
-    val_result_history = {}
-    loss_history = {}
-    lr_history = {}
-    ss_prob_history = {}
-    histories = {}
-    iteration = 0
-    epoch = 0
+
+    iteration = infos.get('iter', 0)
+    epoch = infos.get('epoch', 0)
+    val_result_history = histories.get('val_result_history', {})
+    loss_history = histories.get('loss_history', {})
+    lr_history = histories.get('lr_history', {})
+    ss_prob_history = histories.get('ss_prob_history', {})
+    loader.iterators = infos.get('iterators', loader.iterators)
+    loader.split_ix = infos.get('split_ix', loader.split_ix)
     epoch_done = True
     sc_flag = False
 
@@ -82,10 +84,13 @@ def train(opt):
         best_val_score = infos.get('best_val_score', None)
 
     opt.vocab = loader.get_vocab()
-    decoder = models.AoAModel(opt)
+    decoder = models.AoAModelWrapper(opt, 1.0)
     del opt.vocab
     lw_decoder = LossWrapper(decoder, opt)
     model = models.FixedFeatureCaptionModel(encoder, decoder, eval_kwargs)
+    if opt.start_from is not None:
+        utils.load_model(model, opt)
+    model = model.to(device)
 
     optimizer = optim.Adam(
         [{'params': decoder.parameters()}, {'params': encoder.parameters()}],
@@ -94,11 +99,12 @@ def train(opt):
         opt.optim_epsilon,
         opt.weight_decay
     )
+    if opt.start_from is not None:
+        utils.load_optimizer(optimizer, opt)
 
     if pre_trained_path:
         decoder.load_state_dict(torch.load(pre_trained_path + 'model-best.pth'))
     model.train()
-    model = model.to(device)
 
     try:
         while True:
@@ -117,13 +123,6 @@ def train(opt):
                     frac = (epoch - opt.scheduled_sampling_start) // opt.scheduled_sampling_increase_every
                     opt.ss_prob = min(opt.scheduled_sampling_increase_prob * frac, opt.scheduled_sampling_max_prob)
                     decoder.ss_prob = opt.ss_prob
-
-                # If start self-critical training
-                if opt.self_critical_after != -1 and epoch >= opt.self_critical_after:
-                    sc_flag = True
-                    init_scorer(opt.cached_tokens)
-                else:
-                    sc_flag = False
 
                 epoch_done = False
 

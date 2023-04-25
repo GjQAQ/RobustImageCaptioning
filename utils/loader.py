@@ -62,8 +62,6 @@ class DataloaderWrapper(DataLoader):
             att_batch.append(att.reshape(-1, att.shape[-1]))
             label_batch.append(padded_cap.to(self.device))
             gts.append(ground_truth.to(self.device))
-        # image_batch = torch.stack(images).to(device)
-        # fc_batch, att_batch = self.encoder(image_batch)
         fc_batch = torch.stack(fc_batch)
         att_batch = torch.stack(att_batch)
 

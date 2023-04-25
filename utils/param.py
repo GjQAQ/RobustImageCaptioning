@@ -1,5 +1,7 @@
 import argparse
 
+import aoanet.opts as origin
+
 
 def set_parser():
     # from original code(AoANet)
@@ -269,5 +271,17 @@ def set_parser():
     parser.add_argument('--dataset_root', type=str)
     parser.add_argument('--training_device', type=str, default='cpu')
     parser.add_argument('--pretrained_path', type=str)
+
+    return parser
+
+
+def set_eval_parser():
+    parser = argparse.ArgumentParser()
+    origin.add_eval_options(parser)
+
+    parser.add_argument('--model', type=str, default='', help='path to model to evaluate')
+    parser.add_argument('--infos_path', type=str, default='', help='path to infos to evaluate')
+    parser.add_argument('--dataset_root', type=str)
+    parser.add_argument('--evaluation_device', type=str, default='cpu')
 
     return parser
