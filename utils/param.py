@@ -268,7 +268,7 @@ def set_parser():
 
     # added in RobustImageCaption
     parser.add_argument('--distilling_temperature', type=float, default=1.0)
-    parser.add_argument('--dataset_root', type=str)
+    parser.add_argument('--dataset_root', type=str, required=True)
     parser.add_argument('--training_device', type=str, default='cpu')
     parser.add_argument('--pretrained_path', type=str)
 
@@ -279,9 +279,10 @@ def set_eval_parser():
     parser = argparse.ArgumentParser()
     origin.add_eval_options(parser)
 
-    parser.add_argument('--model', type=str, default='', help='path to model to evaluate')
-    parser.add_argument('--infos_path', type=str, default='', help='path to infos to evaluate')
-    parser.add_argument('--dataset_root', type=str)
+    parser.add_argument('--model', type=str, required=True, help='path to model to evaluate')
+    parser.add_argument('--infos_path', type=str, required=True, help='path to infos to evaluate')
+    parser.add_argument('--dataset_root', type=str, required=True)
     parser.add_argument('--evaluation_device', type=str, default='cpu')
+    parser.add_argument('--corrupter', type=str, default='preserve')
 
     return parser

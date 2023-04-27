@@ -3,12 +3,13 @@ from torch.nn import Module
 from torch.nn.functional import kl_div
 
 from .e2e import FixedFeatureCaptionModel
+import utils
 from utils.check import *
 from corrupter import Corrupter
 from aoanet.misc.utils import LabelSmoothing
 
 
-class DistillationContainer(Module):
+class DistillationContainer:
     def __init__(
         self,
         teacher: FixedFeatureCaptionModel,
@@ -41,15 +42,11 @@ class DistillationContainer(Module):
         self.student.temperature = 1
         hard_prob = self.student(corrupted, sequence, use_buffer=True)
 
-        soft_loss = kl_div(soft_prob, reference, reduction='none', log_target=True)  # todo
+        soft_loss = kl_div(soft_prob, reference, reduction='none', log_target=True)
+        soft_loss = (soft_loss.sum(2) * mask).sum() / mask.sum()
         hard_loss = self.hard_loss(hard_prob, sequence[:, 1:], mask[:, 1:])
 
         return soft_loss / self.temperature ** 2 + self.__hard_weight * hard_loss
-
-    def train(self, mode=True):
-        if not mode:
-            raise RuntimeError('Distillation container can only be used to train')
-        return super().train(mode)
 
     @property
     def temperature(self):

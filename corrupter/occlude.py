@@ -10,4 +10,5 @@ class Occlude(Corrupter):
 
     @torch.no_grad()
     def forward(self, image):
-        pass  # todo
+        c, h, w = image.shape
+        pass

@@ -26,14 +26,7 @@ class DataloaderWrapper(DataLoader):
         # return only index in self.images_info without features
         return [index]
 
-    def get_batch(self, split, batch_size=None):
-        # this method must be overriden for following reasons:
-        # 1. It must load images and labels rather than features
-        # 2. It must load in batch rather than one by one
-        if batch_size is not None:
-            raise ValueError(f'The parameter batch_size is banned')
-        batch_size = self.batch_size
-
+    def get_batch(self, split, image_only=False):
         wrapped = False
         indices = []
         splits = []
@@ -42,8 +35,9 @@ class DataloaderWrapper(DataLoader):
         gts = []
         fc_batch = []
         att_batch = []
+        images = []
 
-        for i in range(batch_size):
+        for i in range(self.batch_size):
             ix, tmp_wrapped = self._prefetch_process[split].get()
             if tmp_wrapped:
                 wrapped = True
@@ -56,18 +50,17 @@ class DataloaderWrapper(DataLoader):
             })
         for index, split in zip(indices, splits):
             image, padded_cap, ground_truth = self.datasets[split][index]
-            # images.append(self.preprocess(image))
-            fc, att = self.encoder(self.preprocess(image.to(self.device))[None, ...])
-            fc_batch.append(fc.squeeze())
-            att_batch.append(att.reshape(-1, att.shape[-1]))
+            image = self.preprocess(image.to(self.device))
+            if image_only:
+                images.append(image)
+            else:
+                fc, att = self.encoder(image[None, ...])
+                fc_batch.append(fc.squeeze())
+                att_batch.append(att.reshape(-1, att.shape[-1]))
             label_batch.append(padded_cap.to(self.device))
             gts.append(ground_truth.to(self.device))
-        fc_batch = torch.stack(fc_batch)
-        att_batch = torch.stack(att_batch)
 
         data = {
-            'fc_feats': torch.repeat_interleave(fc_batch, self.seq_per_img, 0),
-            'att_feats': torch.repeat_interleave(att_batch, self.seq_per_img, 0),
             'att_masks': None,
             'labels': torch.cat(label_batch).to(torch.int64),
             'gts': gts,
@@ -78,6 +71,11 @@ class DataloaderWrapper(DataLoader):
                 'wrapped': wrapped
             }
         }
+        if image_only:
+            data['images'] = images
+        else:
+            data['fc_feats'] = torch.repeat_interleave(torch.stack(fc_batch), self.seq_per_img, 0)
+            data['att_feats'] = torch.repeat_interleave(torch.stack(att_batch), self.seq_per_img, 0)
 
         nonzeros = torch.tensor(list(map(lambda x: (x != 0).sum() + 2, data['labels'])))
         mask_batch = torch.zeros(data['labels'].shape[0], self.seq_length + 2)

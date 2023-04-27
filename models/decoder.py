@@ -1,4 +1,5 @@
 import torch
+import torch.nn
 from torch.nn.functional import log_softmax
 
 from utils.check import *
@@ -61,7 +62,7 @@ class AoAModelWrapper(AoAModel):
         batch_size = fc_feats.size(0)
         state = self.init_hidden(batch_size)
         outputs = fc_feats.new_zeros(batch_size, seq.size(1) - 1, self.vocab_size + 1)
-        self.register_buffer('buf_score_buffer', torch.zeros_like(outputs))
+        self.register_buffer('buf_score_buffer', torch.zeros_like(outputs), persistent=False)
 
         p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self._prepare_feature(fc_feats, att_feats, att_masks)
         # pp_att_feats is used for attention, we cache it in advance to reduce computation cost
@@ -93,6 +94,7 @@ class AoAModelWrapper(AoAModel):
 
     def get_logprobs_state(self, it, fc_feats, att_feats, p_att_feats, att_masks, state):
         """Enable temeprature"""
+        it = it.to(self.device)
         score, state = self.__get_score(it, fc_feats, att_feats, p_att_feats, att_masks, state)
         return log_softmax(score / self.distilling_temperature, dim=1), state
 
@@ -113,3 +115,8 @@ class AoAModelWrapper(AoAModel):
     @property
     def score_buffer(self):
         return self.buf_score_buffer
+
+    @property
+    def device(self):
+        sub: torch.nn.Linear = self.ctx2att
+        return sub.weight.device
