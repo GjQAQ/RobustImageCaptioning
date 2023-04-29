@@ -1,16 +1,3 @@
-"""
-Training teacher model.
-This code differs from its origin, train.py in AoANet in these ways:
-1. Using images rather than out-of-box feature data as input;
-2. 'use_box' option must be false;
-3. DataParallel is removed;
-4. self-critical is banned.
-"""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import time
 import traceback
 
@@ -20,13 +7,12 @@ import torch.optim as optim
 import adapter
 import utils
 import models
+import corrupter
 import aoanet.misc.utils as aoa_utils
 from aoanet.misc.loss_wrapper import LossWrapper
 
-tb = utils.tb
 
-
-def train(opt):
+def distill(opt):
     if opt.use_box:
         raise ValueError()
     # Deal with feature things before anything
@@ -34,14 +20,13 @@ def train(opt):
     acc_steps = getattr(opt, 'acc_steps', 1)
     dataset_root = opt.dataset_root
     device = opt.training_device
-    pre_trained_path = opt.pretrained_path
 
-    encoder = models.ResNet101Encoder(7)
-    loader = utils.DataloaderWrapper(encoder, dataset_root, opt, device=device)
+    student_encoder = models.ResNet101Encoder(7)
+    loader = utils.DataloaderWrapper(student_encoder, dataset_root, opt, device=device)
     opt.vocab_size = loader.vocab_size
     opt.seq_length = loader.seq_length
 
-    tb_summary_writer = tb and tb.SummaryWriter(opt.checkpoint_path)
+    logger = utils.TensorBoardLogger(opt.checkpoint_path)
 
     if opt.start_from is not None:
         infos, histories = utils.load_record(opt)
@@ -71,23 +56,33 @@ def train(opt):
     loader.iterators = infos.get('iterators', loader.iterators)
     loader.split_ix = infos.get('split_ix', loader.split_ix)
     epoch_done = True
-    sc_flag = False
 
     best_val_score = None
     if opt.load_best_score == 1:
         best_val_score = infos.get('best_val_score', None)
 
     opt.vocab = loader.get_vocab()
-    decoder = models.AoAModelWrapper(opt, 1.0)
+    student_decoder = models.AoAModelWrapper(opt)
+    teacher_encoder = models.ResNet101Encoder(7)
+    teacher_decoder = models.AoAModelWrapper(opt)
     del opt.vocab
-    lw_decoder = LossWrapper(decoder, opt)
-    model = models.FixedFeatureCaptionModel(encoder, decoder, eval_kwargs)
+
+    eval_kwargs.update(vars(opt))
+    student = models.FixedFeatureCaptionModel(student_encoder, student_decoder, eval_kwargs)
+    teacher = models.FixedFeatureCaptionModel(teacher_encoder, teacher_decoder, eval_kwargs)
+    crrupter = corrupter.get_instance(opt.corrupter)
+    container = models.DistillationContainer(
+        teacher, student, crrupter, opt.distilling_temperature, smoothing=opt.label_smoothing
+    )
     if opt.start_from is not None:
-        utils.load_model(model, opt)
-    model = model.to(device)
+        utils.load_model(student, opt)
+    teacher.load_state_dict(torch.load(opt.teacher_checkpoint))
+    student.load_state_dict(torch.load(opt.teacher_checkpoint))
+    student.to(device)
+    teacher.to(device)
 
     optimizer = optim.Adam(
-        [{'params': decoder.parameters()}, {'params': encoder.parameters()}],
+        [{'params': student_decoder.parameters()}, {'params': student_encoder.parameters()}],
         opt.learning_rate,
         (opt.optim_alpha, opt.optim_beta),
         opt.optim_epsilon,
@@ -95,10 +90,6 @@ def train(opt):
     )
     if opt.start_from is not None:
         utils.load_optimizer(optimizer, opt)
-
-    if pre_trained_path:
-        decoder.load_state_dict(torch.load(pre_trained_path + 'model-best.pth'))
-    model.train()
 
     try:
         while True:
@@ -116,7 +107,7 @@ def train(opt):
                 if epoch > opt.scheduled_sampling_start and opt.scheduled_sampling_start >= 0:
                     frac = (epoch - opt.scheduled_sampling_start) // opt.scheduled_sampling_increase_every
                     opt.ss_prob = min(opt.scheduled_sampling_increase_prob * frac, opt.scheduled_sampling_max_prob)
-                    decoder.ss_prob = opt.ss_prob
+                    student_decoder.ss_prob = opt.ss_prob
 
                 epoch_done = False
 
@@ -124,7 +115,7 @@ def train(opt):
                 opt.current_lr = opt.learning_rate * (iteration + 1) / opt.noamopt_warmup
                 aoa_utils.set_lr(optimizer, opt.current_lr)
             # data = loader.get_batch('train', device=device)
-            data = loader.get_batch('train')
+            data = loader.get_batch('train', image_only=True)
 
             if iteration % acc_steps == 0:
                 optimizer.zero_grad()
@@ -132,13 +123,8 @@ def train(opt):
                 torch.cuda.synchronize()
 
             start = time.time()
-            model_out = lw_decoder(
-                data['fc_feats'], data['att_feats'], data['labels'], data['masks'], data['att_masks'],
-                data['gts'], torch.arange(0, len(data['gts'])), sc_flag
-            )
-            loss = model_out['loss'].mean()
-            loss_sp = loss / acc_steps
-            loss_sp.backward()
+            loss, soft_loss, hard_loss = container.forward(data['images'], data['labels'], data['masks'])
+            loss.backward()
 
             if (iteration + 1) % acc_steps == 0:
                 aoa_utils.clip_gradient(optimizer, opt.grad_clip)
@@ -147,15 +133,10 @@ def train(opt):
                 torch.cuda.synchronize()
             train_loss = loss.item()
             end = time.time()
-            if not sc_flag and iteration % 1000 == 0:
+            if iteration % 1000 == 0:
                 print(
                     "iter {} (epoch {}), train_loss = {:.3f}, time/batch = {:.3f}"
                     .format(iteration, epoch, train_loss, end - start)
-                )
-            elif iteration % 1000 == 0:
-                print(
-                    "iter {} (epoch {}), avg_reward = {:.3f}, time/batch = {:.3f}"
-                    .format(iteration, epoch, model_out['reward'].mean(), end - start)
                 )
 
             # Update the iteration and epoch
@@ -166,15 +147,15 @@ def train(opt):
 
             # Write the training loss summary
             if iteration % opt.losses_log_every == 0:
-                utils.add_summary_value(tb_summary_writer, 'train_loss', train_loss, iteration)
-                utils.add_summary_value(tb_summary_writer, 'learning_rate', opt.current_lr, iteration)
-                utils.add_summary_value(tb_summary_writer, 'scheduled_sampling_prob', decoder.ss_prob, iteration)
-                if sc_flag:
-                    utils.add_summary_value(tb_summary_writer, 'avg_reward', model_out['reward'].mean(), iteration)
+                logger.train_log('train_loss', train_loss, iteration)
+                logger.train_log('soft_loss', soft_loss, iteration)
+                logger.train_log('hard_loss', hard_loss, iteration)
+                logger.train_log('learning_rate', opt.current_lr, iteration)
+                logger.train_log('scheduled_sampling_prob', student_decoder.ss_prob, iteration)
 
-                histories['loss_history'][iteration] = train_loss if not sc_flag else model_out['reward'].mean()
+                histories['loss_history'][iteration] = train_loss
                 histories['lr_history'][iteration] = opt.current_lr
-                histories['ss_prob_history'][iteration] = decoder.ss_prob
+                histories['ss_prob_history'][iteration] = student_decoder.ss_prob
 
             # update infos
             infos['iter'] = iteration
@@ -186,10 +167,10 @@ def train(opt):
             if iteration % opt.save_checkpoint_every == 0:
                 eval_kwargs.update(vars(opt))
                 best_val_score = utils.checkpoint(
-                    model, optimizer, lw_decoder.crit, loader,
+                    student, optimizer, aoa_utils.LanguageModelCriterion(), loader,
                     eval_kwargs, histories, infos, opt,
                     iteration, best_val_score,
-                    tb_summary_writer
+                    logger
                 )
 
             # Stop if reaching max epochs
@@ -197,13 +178,13 @@ def train(opt):
                 break
     except (RuntimeError, KeyboardInterrupt):
         print('Save ckpt on exception ...')
-        utils.save_checkpoint(model, infos, optimizer, opt)
+        utils.save_checkpoint(student, infos, optimizer, opt)
         print('Save ckpt done.')
         stack_trace = traceback.format_exc()
         print(stack_trace)
 
 
 if __name__ == '__main__':
-    parser = utils.set_parser()
+    parser = utils.set_distill_parser()
     opt = parser.parse_args()
-    train(opt)
+    distill(opt)

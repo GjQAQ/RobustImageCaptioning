@@ -4,6 +4,7 @@ import functools
 import torch
 from torch.nn import Module, Sequential
 from torch.nn.functional import adaptive_avg_pool2d
+from torch.nn.modules.module import T
 
 import aoanet.misc.resnet as resnets
 
@@ -31,6 +32,10 @@ class Encoder(Module, metaclass=abc.ABCMeta):
         att = adaptive_avg_pool2d(x, self.attention_size).permute(0, 2, 3, 1)  # B x A x A x C
 
         return fc, att
+
+    def train(self: T, mode: bool = True) -> T:
+        if mode:
+            return super().train(mode)
 
 
 def define(name, f):

@@ -12,7 +12,8 @@ class DataloaderWrapper(DataLoader):
     def __init__(self, encoder, root_path: str, opt, device='cpu'):
         super().__init__(opt)
         self.device = device
-        self.encoder = encoder.to(device)
+        if encoder is not None:
+            self.encoder = encoder.to(device)
         self.preprocess = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]).to(device)
 
         self.datasets = {}

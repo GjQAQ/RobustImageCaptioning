@@ -65,6 +65,7 @@ def print_beam(loader, model):
 
 
 # a variant of aoanet.eval_utils.eval_split
+@torch.no_grad()
 def evaluate(model, crit, loader, eval_kwargs):
     verbose = eval_kwargs.get('verbose', True)
     verbose_beam = eval_kwargs.get('verbose_beam', 1)
@@ -75,7 +76,9 @@ def evaluate(model, crit, loader, eval_kwargs):
     dataset = eval_kwargs.get('dataset', 'coco')
     beam_size = eval_kwargs.get('beam_size', 1)
     remove_bad_endings = eval_kwargs.get('remove_bad_endings', 0)
-    os.environ["REMOVE_BAD_ENDINGS"] = str(remove_bad_endings)  # Use this nasty way to make other code clean since it's a global configuration
+    crrupter = corrupter.get_instance(eval_kwargs['corrupter'])  # blur only
+    # Use this nasty way to make other code clean since it's a global configuration
+    os.environ["REMOVE_BAD_ENDINGS"] = str(remove_bad_endings)
 
     loader.reset_iterator(split)
 
@@ -86,6 +89,7 @@ def evaluate(model, crit, loader, eval_kwargs):
     predictions = []
     while True:
         data = loader.get_batch(split, image_only=True)
+        data['images'] = list(map(crrupter, data['images']))
         n = n + loader.batch_size
 
         if data.get('labels', None) is not None and verbose_loss:

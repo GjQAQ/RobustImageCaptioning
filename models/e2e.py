@@ -17,6 +17,9 @@ class FixedFeatureCaptionModel(torch.nn.Module):
         self.__temperature = 1.0
 
     def forward(self, image, sequence, mode='forward', **kwargs):
+        if kwargs.get('use_buffer', False):
+            return self.decoder(None, None, None, mode='forward', use_buffer=True)
+
         fc, att = self.encode(image)
         # att_masks always is None because the size of att_feats is fixed
         if mode == 'forward':
@@ -56,7 +59,6 @@ class FixedFeatureCaptionModel(torch.nn.Module):
         if 'decoder.buf_score_buffer' in state_dict:
             del state_dict['decoder.buf_score_buffer']
         return super().load_state_dict(state_dict, strict)
-
 
     @property
     def temperature(self):
