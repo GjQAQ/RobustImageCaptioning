@@ -34,7 +34,6 @@ class DistillationContainer:
 
     def forward(self, image, sequence, mask):
         with torch.no_grad():
-            # reference = self.teacher(image, sequence, 'distill')
             reference = self.teacher(image, sequence)
 
         if isinstance(image, torch.Tensor):
@@ -51,7 +50,7 @@ class DistillationContainer:
         soft_loss = (soft_loss.sum(2) * mask).sum() / mask.sum()
         hard_loss = self.hard_loss(hard_prob, sequence[:, 1:], mask)
 
-        final = soft_loss / self.temperature ** 2 + self.__hard_weight * hard_loss
+        final = soft_loss * self.temperature ** 2 + self.__hard_weight * hard_loss
         return final, soft_loss, hard_loss
 
     @property

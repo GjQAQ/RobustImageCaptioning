@@ -76,7 +76,7 @@ def evaluate(model, crit, loader, eval_kwargs):
     dataset = eval_kwargs.get('dataset', 'coco')
     beam_size = eval_kwargs.get('beam_size', 1)
     remove_bad_endings = eval_kwargs.get('remove_bad_endings', 0)
-    crrupter = corrupter.get_instance(eval_kwargs['corrupter'])  # blur only
+    crrupter = corrupter.get_instance(eval_kwargs['corrupter'])
     # Use this nasty way to make other code clean since it's a global configuration
     os.environ["REMOVE_BAD_ENDINGS"] = str(remove_bad_endings)
 

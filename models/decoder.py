@@ -11,47 +11,6 @@ class AoAModelWrapper(AoAModel):
         super().__init__(opt)
         self.__distilling_temperature = temperature
 
-    def _distill(self, fc_feats, att_feats, att_masks=None, opt=None):
-        """A variant of _sample"""
-        if opt is None:
-            opt = {}
-        sample_method = opt.get('sample_method', 'greedy')
-        beam_size = opt.get('beam_size', 1)
-        temperature = opt.get('temperature', 1.0)
-        batch_size = fc_feats.size(0)
-        unfinished = True
-        it = 0
-        if beam_size > 1:
-            raise ValueError(f'beam_size in _distill must be 1')
-
-        state = self.init_hidden(batch_size)
-        log_prob = torch.zeros(batch_size, self.seq_length + 1, self.vocab_size - 1)  # todo
-
-        p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self._prepare_feature(fc_feats, att_feats, att_masks)
-        for t in range(self.seq_length + 1):
-            if t == 0:  # input <bos>
-                it = fc_feats.new_zeros(batch_size, dtype=torch.long)
-            logprobs, state = self.get_logprobs_state(it, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, state)
-            log_prob[:, t] = logprobs
-
-            # sample the next word
-            if t == self.seq_length:  # skip if we achieve maximum length
-                break
-            it, _ = self.sample_next_word(logprobs, sample_method, temperature)
-
-            # stop when all finished
-            if t == 0:
-                unfinished = it > 0
-            else:
-                unfinished = unfinished * (it > 0)
-            it = it * unfinished.type_as(it)
-
-            # quit loop if all sequences have finished
-            if unfinished.sum() == 0:
-                break
-
-        return log_prob
-
     def _forward(self, fc_feats, att_feats, seq, att_masks=None, use_buffer=False):
         """
         Enable buffering scores before softmax to facilitate student's forward.

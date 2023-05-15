@@ -5,6 +5,7 @@ import torch
 from torch.nn import Module, Sequential
 from torch.nn.functional import adaptive_avg_pool2d
 from torch.nn.modules.module import T
+from torchvision import transforms
 
 import aoanet.misc.resnet as resnets
 
@@ -25,17 +26,15 @@ class Encoder(Module, metaclass=abc.ABCMeta):
             base.layer3,
             base.layer4
         )
+        self.preprocess = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
     def forward(self, x):
+        x = self.preprocess(x)
         x = self.layers(x)
         fc = x.mean(3).mean(2).squeeze()[None, ...]  # add batch dimension
         att = adaptive_avg_pool2d(x, self.attention_size).permute(0, 2, 3, 1)  # B x A x A x C
 
         return fc, att
-
-    def train(self: T, mode: bool = True) -> T:
-        if mode:
-            return super().train(mode)
 
 
 def define(name, f):

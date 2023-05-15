@@ -4,12 +4,14 @@ import os
 from .base import *
 from .occlude import *
 from .blur import *
+from .noise import *
 
 
 __corrupters = {
     'blur': GaussianBlur,
     'preserve': Preserve,
-    'occlude': Occlude
+    'occlude': Occlude,
+    'noise': Noise
 }
 
 __dir_path = os.path.dirname(os.path.abspath(__file__))

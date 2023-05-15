@@ -1,9 +1,8 @@
-# remove --start_from if not started from a checkpoint
-# settings of paths follows that in AoANet
-id="res-aoa"
+# similar to train_teacher.sh
+id="distill"
+ckpt_id="res-aoa"
 dataset_root="/root/autodl-tmp/datasets/MSCOCO"
-nohup python train_teacher.py --id $id \
-    --start_from "log/log_$id" \
+nohup python distill.py --id $id \
     --caption_model aoa \
     --refine 1 \
     --refine_aoa 1 \
@@ -36,7 +35,10 @@ nohup python train_teacher.py --id $id \
     --save_checkpoint_every 6000 \
     --language_eval 1 \
     --val_images_use -1 \
-    --max_epochs 30 \
+    --max_epochs 25 \
     --scheduled_sampling_increase_every 5 \
     --scheduled_sampling_max_prob 0.5 \
-    --learning_rate_decay_every 3
+    --learning_rate_decay_every 3 \
+    --teacher_checkpoint log/"log_$ckpt_id"/model-best.pth \
+    --distilling_temperature 20 \
+    --corrupter blur

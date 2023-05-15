@@ -2,7 +2,6 @@ import random
 import json
 
 import torch
-from torchvision import transforms
 
 from aoanet.dataloader import DataLoader
 from .dataset import MSCOCO2014
@@ -12,9 +11,7 @@ class DataloaderWrapper(DataLoader):
     def __init__(self, encoder, root_path: str, opt, device='cpu'):
         super().__init__(opt)
         self.device = device
-        if encoder is not None:
-            self.encoder = encoder.to(device)
-        self.preprocess = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]).to(device)
+        self.encoder = encoder.to(device)
 
         self.datasets = {}
         self.split_ix['train'] = self.split_ix['train']
@@ -27,7 +24,7 @@ class DataloaderWrapper(DataLoader):
         # return only index in self.images_info without features
         return [index]
 
-    def get_batch(self, split, image_only=False):
+    def get_batch(self, split, image_only=False, corrupter=None):
         wrapped = False
         indices = []
         splits = []
@@ -51,7 +48,10 @@ class DataloaderWrapper(DataLoader):
             })
         for index, split in zip(indices, splits):
             image, padded_cap, ground_truth = self.datasets[split][index]
-            image = self.preprocess(image.to(self.device))
+            image = image.to(self.device)
+            if corrupter is not None:
+                image = corrupter(image)
+
             if image_only:
                 images.append(image)
             else:

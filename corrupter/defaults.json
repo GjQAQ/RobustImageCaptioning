@@ -2,6 +2,9 @@
   "blur": {
     "kernel_size": 13
   },
+  "noise": {
+    "intensity": 0.1
+  },
   "occlude": {
     "ratio": [
       0.7,

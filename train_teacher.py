@@ -11,6 +11,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os.path
 import time
 import traceback
 
@@ -20,10 +21,9 @@ import torch.optim as optim
 import adapter
 import utils
 import models
+import corrupter
 import aoanet.misc.utils as aoa_utils
 from aoanet.misc.loss_wrapper import LossWrapper
-
-tb = utils.tb
 
 
 def train(opt):
@@ -41,7 +41,7 @@ def train(opt):
     opt.vocab_size = loader.vocab_size
     opt.seq_length = loader.seq_length
 
-    tb_summary_writer = tb and tb.SummaryWriter(opt.checkpoint_path)
+    logger = utils.TensorBoardLogger(opt.checkpoint_path)
 
     if opt.start_from is not None:
         infos, histories = utils.load_record(opt)
@@ -81,6 +81,7 @@ def train(opt):
     decoder = models.AoAModelWrapper(opt, 1.0)
     del opt.vocab
     lw_decoder = LossWrapper(decoder, opt)
+    crrupter = corrupter.get_instance(opt.corrupter)
     model = models.FixedFeatureCaptionModel(encoder, decoder, eval_kwargs)
     if opt.start_from is not None:
         utils.load_model(model, opt)
@@ -97,7 +98,7 @@ def train(opt):
         utils.load_optimizer(optimizer, opt)
 
     if pre_trained_path:
-        decoder.load_state_dict(torch.load(pre_trained_path + 'model-best.pth'))
+        model.load_state_dict(torch.load(os.path.join(pre_trained_path, 'model-best.pth')))
     model.train()
 
     try:
@@ -124,7 +125,7 @@ def train(opt):
                 opt.current_lr = opt.learning_rate * (iteration + 1) / opt.noamopt_warmup
                 aoa_utils.set_lr(optimizer, opt.current_lr)
             # data = loader.get_batch('train', device=device)
-            data = loader.get_batch('train')
+            data = loader.get_batch('train', corrupter=crrupter)
 
             if iteration % acc_steps == 0:
                 optimizer.zero_grad()
@@ -166,11 +167,9 @@ def train(opt):
 
             # Write the training loss summary
             if iteration % opt.losses_log_every == 0:
-                utils.add_summary_value(tb_summary_writer, 'train_loss', train_loss, iteration)
-                utils.add_summary_value(tb_summary_writer, 'learning_rate', opt.current_lr, iteration)
-                utils.add_summary_value(tb_summary_writer, 'scheduled_sampling_prob', decoder.ss_prob, iteration)
-                if sc_flag:
-                    utils.add_summary_value(tb_summary_writer, 'avg_reward', model_out['reward'].mean(), iteration)
+                logger.train_log('train_loss', train_loss, iteration)
+                logger.train_log('learning_rate', opt.current_lr, iteration)
+                logger.train_log('scheduled_sampling_prob', decoder.ss_prob, iteration)
 
                 histories['loss_history'][iteration] = train_loss if not sc_flag else model_out['reward'].mean()
                 histories['lr_history'][iteration] = opt.current_lr
@@ -185,12 +184,14 @@ def train(opt):
             # make evaluation on validation set, and save model
             if iteration % opt.save_checkpoint_every == 0:
                 eval_kwargs.update(vars(opt))
+                model.eval()
                 best_val_score = utils.checkpoint(
                     model, optimizer, lw_decoder.crit, loader,
                     eval_kwargs, histories, infos, opt,
                     iteration, best_val_score,
-                    tb_summary_writer
+                    logger
                 )
+                model.train()
 
             # Stop if reaching max epochs
             if epoch >= opt.max_epochs != -1:

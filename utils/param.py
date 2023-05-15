@@ -270,6 +270,7 @@ def set_parser():
     parser.add_argument('--dataset_root', type=str, required=True)
     parser.add_argument('--training_device', type=str, default='cpu')
     parser.add_argument('--pretrained_path', type=str)
+    parser.add_argument('--corrupter', type=str, default='preserve')
 
     return parser
 
@@ -290,6 +291,5 @@ def set_eval_parser():
 def set_distill_parser():
     parser = set_parser()
     parser.add_argument('--distilling_temperature', type=float, default=20)
-    parser.add_argument('--corrupter', type=str, default='blur')
     parser.add_argument('--teacher_checkpoint', type=str, required=True)
     return parser

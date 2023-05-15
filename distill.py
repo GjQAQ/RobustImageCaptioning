@@ -166,12 +166,14 @@ def distill(opt):
             # make evaluation on validation set, and save model
             if iteration % opt.save_checkpoint_every == 0:
                 eval_kwargs.update(vars(opt))
+                student.eval()
                 best_val_score = utils.checkpoint(
                     student, optimizer, aoa_utils.LanguageModelCriterion(), loader,
                     eval_kwargs, histories, infos, opt,
                     iteration, best_val_score,
                     logger
                 )
+                student.train()
 
             # Stop if reaching max epochs
             if epoch >= opt.max_epochs != -1:

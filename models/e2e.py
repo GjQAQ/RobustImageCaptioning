@@ -31,11 +31,6 @@ class FixedFeatureCaptionModel(torch.nn.Module):
         elif mode == 'sample':
             # return sequence and log probabilities in sequence
             return self.decoder(fc, att, None, opt=self.evaluation_args, mode='sample')
-        elif mode == 'distill':
-            if self.evaluation_args['beam_size'] != 1:
-                raise ValueError(f'beam_size must be 1 during distillation')
-            # return log probability distribution
-            return self.decoder(fc, att, None, opt=self.evaluation_args, mode='distill')
         else:
             raise ValueError(f'Unknown mode: {mode}')
 
